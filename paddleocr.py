@@ -623,7 +623,8 @@ class PaddleOCR(predict_system.TextSystem):
             cls=True,
             bin=False,
             inv=False,
-            alpha_color=(255, 255, 255)):
+            alpha_color=(255, 255, 255,),
+            enhance_model=None):
         """
         OCR with PaddleOCR
         args：
@@ -653,6 +654,14 @@ class PaddleOCR(predict_system.TextSystem):
         else:
             imgs = [img]
 
+        def super_resolution(enhance_model, image):
+            ''' custom function to enchance resolution of images using TF-LapSRN
+            source: https://github.com/fannymonori/TF-LapSRN '''
+            sr = cv2.dnn_superres.DnnSuperResImpl_create()
+            sr.readModel(enhance_model)
+            sr.setModel("lapsrn", 8)
+            return sr.upsample(image)
+        
         def preprocess_image(_image):
             _image = alpha_to_color(_image, alpha_color)
             if inv:
@@ -797,7 +806,8 @@ def main():
                                 cls=args.use_angle_cls,
                                 bin=args.binarize,
                                 inv=args.invert,
-                                alpha_color=args.alphacolor)
+                                alpha_color=args.alphacolor,
+                                enhance_model=args.super_res)
             if result is not None:
                 for idx in range(len(result)):
                     res = result[idx]
