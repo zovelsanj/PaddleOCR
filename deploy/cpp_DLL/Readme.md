@@ -19,6 +19,9 @@ C:\Users\ekser\OneDrive\Documents\OCR\paddleOCR\paddle_inference\third_party\ins
 C:\Users\ekser\OneDrive\Documents\OCR\paddleOCR\paddle_inference\third_party\install\mklml\include;
 C:\Users\ekser\OneDrive\Documents\OCR\paddleOCR\paddle_inference\third_party\install\mkldnn\include;
 C:\Users\ekser\OneDrive\Documents\OCR\paddleOCR\paddle_inference\third_party\install\cryptopp\include;
+C:\Users\ekser\OneDrive\Documents\OCR\dependencies\vcpkg\buildtrees\libzip\src\v1.10.1-eedce0a086.clean\lib;
+C:\Users\ekser\OneDrive\Documents\OCR\dependencies\vcpkg\buildtrees\libzip\src\v1.10.1-eedce0a086.clean\src;
+C:\Users\ekser\OneDrive\Documents\OCR\dependencies\vcpkg\buildtrees\libzip\x64-windows-rel;
 %(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
 ```
       
@@ -38,6 +41,7 @@ C:\Users\ekser\OneDrive\Documents\OCR\paddleOCR\paddle_inference\third_party\ins
 C:\Users\ekser\OneDrive\Documents\OCR\paddleOCR\paddle_inference\third_party\install\mkldnn\lib;
 C:\Users\ekser\OneDrive\Documents\OCR\paddleOCR\paddle_inference\third_party\install\mklml\lib;
 C:\Users\ekser\OneDrive\Documents\OCR\paddleOCR\paddle_inference\third_party\install\onnxruntime\lib;
+C:\Users\ekser\OneDrive\Documents\OCR\dependencies\vcpkg\buildtrees\libzip\x64-windows-rel\lib;
 %(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
 ```
 
@@ -60,11 +64,20 @@ cryptopp-static.lib;
 utf8proc_static.lib;
 xxhash.lib;
 ShLwApi.Lib;
+zip.lib;
 %(AdditionalDependencies)</AdditionalDependencies>
 ```
 For `ShLwApi.Lib`, you may need to include it from `C:\Program Files (x86)\Windows Kits\10\Lib\10.0.22621.0\um\x64`.
 
-      
+## OCR for Office-2007 Docs
+To extract images from Office-2007 docs (`.docx`, `.pptx`, and `.xlsx`), [`libzip`](https://libzip.org/) is required. Either download its static libraries along with its dependecies `bz2` and `zip` and place them in the libraries path, or build the `libzip` package with [`vcpkg`](https://github.com/microsoft/vcpkg#quick-start-windows) as:
+```
+git clone https://github.com/microsoft/vcpkg
+.\vcpkg\bootstrap-vcpkg.bat
+.\vcpkg\vcpkg install libzip
+```
+NOTE: Make sure you have appropriate access.
+
 ## Runtime Library: C/C++>>Code Generation
 To solve [LNK2005](https://learn.microsoft.com/en-us/cpp/error-messages/tool-errors/linker-tools-error-lnk2005?view=msvc-170&f1url=%3FappId%3DDev16IDEF1%26l%3DEN-US%26k%3Dk(LNK2005)%26rd%3Dtrue) error due to mismatched Runtime Library. ([StackOverflow](https://stackoverflow.com/questions/3007312/resolving-lnk4098-defaultlib-msvcrt-conflicts-with))
 ```
@@ -90,4 +103,7 @@ mklml.dll
 onnxruntime.dll 
 opencv_world455.dll 
 paddle_inference.dll
+zip.dll
+zlib1.dll
+bz2.dll
 ```

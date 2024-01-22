@@ -19,12 +19,66 @@
 #include "opencv2/imgproc.hpp"
 #include <iostream>
 #include <vector>
-
+#include <fstream>
+#include <zip.h>
 #include "args.h"
 #include "paddleocr.h"
 #include "paddlestructure.h"
 
 using namespace PaddleOCR;
+
+std::string extractImagesFromOfficeFile(std::string filePath) {
+    std::string image_dir = FLAGS_output + "/images";
+
+    if (!PaddleOCR::Utility::PathExists(FLAGS_output)) {
+        PaddleOCR::Utility::CreateDir(FLAGS_output);
+        PaddleOCR::Utility::CreateDir(image_dir);
+    }
+
+    zip_t* file = zip_open(filePath.c_str(), ZIP_RDONLY, nullptr);
+    if (!file) {
+        std::cerr << "Error opening file" << std::endl;
+        return "Error Reading File";
+    }
+
+    zip_int64_t numEntries = zip_get_num_entries(file, 0);
+    for (zip_int64_t i = 0; i < numEntries; ++i) {
+        struct zip_stat stat;
+        zip_stat_init(&stat);
+        zip_stat_index(file, i, 0, &stat);
+
+        if (std::string(stat.name).find("media/") != std::string::npos) {
+            zip_file_t* imageFile = zip_fopen_index(file, i, 0);
+
+            if (imageFile) {
+                zip_int64_t size = stat.size;
+                std::vector<char> buffer(size);
+                zip_fread(imageFile, buffer.data(), size);
+                zip_fclose(imageFile);
+
+                std::string out_file = image_dir + "/" + std::to_string(i) + ".png";
+                FILE* outputFile;
+                errno_t error = fopen_s(&outputFile, out_file.c_str(), "wb");
+                if (error != 0)
+                {
+                    std::cerr << "Error creating output file: " << out_file << " error code: " << errno << std::endl;
+                }
+                else {
+                    std::cout << "file path: " << out_file << std::endl;
+                    fwrite(buffer.data(), 1, buffer.size(), outputFile);
+                    fclose(outputFile);
+                    std::cout << "Image extracted: " << out_file << std::endl;
+                }
+            }
+            else {
+                std::cerr << "Error opening image file" << std::endl;
+            }
+        }
+    }
+
+    zip_close(file);
+    return image_dir;
+}
 
 void check_params() {
   if (FLAGS_det) {
@@ -82,9 +136,48 @@ void check_params() {
               << std::endl;
     exit(1);
   }
+    std::string basename = Utility::basename(FLAGS_image_dir);
+    std::size_t dotPos = basename.rfind('.');
+    std::string extension;
+    if (dotPos != std::string::npos) 
+    {
+        extension = basename.substr(dotPos);
+    }
+    std::cout << "extension " << extension << std::endl;
+  if (extension==".docx" || extension==".xlsx" || extension==".pptx")
+  {
+      std::string image_dir;
+      image_dir = extractImagesFromOfficeFile(FLAGS_image_dir);
+      std::cout << "image: " << image_dir << std::endl;
+      FLAGS_image_dir = image_dir;
+  }
 }
 
-void ocr(std::vector<cv::String> &cv_all_img_names) {
+void write_results(std::vector<OCRPredictResult>& ocr_results, std::string inputfile) {
+    if (!Utility::PathExists(FLAGS_output)) {
+        Utility::CreateDir(FLAGS_output);
+    }
+
+    std::string basename = Utility::basename(inputfile);
+    std::string out_path = FLAGS_output + "/" + basename + ".txt";
+
+    std::fstream file(out_path, std::ios::app);
+
+    if (!file.is_open()) {
+        std::ofstream createFile(out_path);
+        createFile.close();
+
+        file.open(out_path, std::ios::app);
+    }
+    for (int i = 0; i < ocr_results.size(); i++) {
+        file << ocr_results[i].text << std::ends;
+    }
+    file << std::endl;
+    file.close();
+    std::cout << "Data has been written to the file in append mode." << std::endl;
+}
+
+void ocr(std::vector<cv::String> &cv_all_img_names, std::string inputfile) {
   PPOCR ocr;
 
   if (FLAGS_benchmark_) {
@@ -110,6 +203,8 @@ void ocr(std::vector<cv::String> &cv_all_img_names) {
   for (int i = 0; i < img_names.size(); ++i) {
     std::cout << "predict img: " << cv_all_img_names[i] << std::endl;
     Utility::print_result(ocr_results[i]);
+    write_results(ocr_results[i], inputfile);
+
     if (FLAGS_visualize && FLAGS_det) {
       std::string file_name = Utility::basename(img_names[i]);
       cv::Mat srcimg = img_list[i];
@@ -180,6 +275,7 @@ void structure(std::vector<cv::String> &cv_all_img_names) {
 int main_ocr(int argc, char **argv) {
   // Parsing command-line
   google::ParseCommandLineFlags(&argc, &argv, true);
+  std::string inputfile = FLAGS_image_dir;
   check_params();
 
   if (!Utility::PathExists(FLAGS_image_dir)) {
@@ -196,7 +292,7 @@ int main_ocr(int argc, char **argv) {
     Utility::CreateDir(FLAGS_output);
   }
   if (FLAGS_type == "ocr") {
-    ocr(cv_all_img_names);
+    ocr(cv_all_img_names, inputfile);
   } else if (FLAGS_type == "structure") {
     structure(cv_all_img_names);
   } else {
@@ -219,32 +315,15 @@ void call_ocr(const char* input_file, const char* output_path)
     // Concatenate the input
     strcat_s(result, totalLen + 1, input_file);
 
-    const char* args[] = {"ppocr.exe", "system", "--det_model_dir=C:\\Users\\ekser\\OneDrive\\Documents\\OCR\\paddleOCR\\PaddleOCR\\models\\chinese\\ch_PP-OCRv4_det_infer",
-                            "--rec_model_dir=C:\\Users\\ekser\\OneDrive\\Documents\\OCR\\paddleOCR\\PaddleOCR\\models\\multilanguage\\japan_PP-OCRv4_rec_infer", 
-                            "--cls_model_dir=C:\\Users\\ekser\\OneDrive\\Documents\\OCR\\paddleOCR\\PaddleOCR\\models\\multilanguage\\ch_ppocr_mobile_v2.0_cls_infer", 
+    const char* args[] = {"system", 
                             result, 
                             "--use_angle_cls=true", 
                             "--det=true",
                             "--rec=true",
-                            "--cls=true",
-                            "--rec_char_dict_path=C:\\Users\\ekser\\OneDrive\\Documents\\OCR\\paddleOCR\\PaddleOCR\\ppocr\\utils\\dict\\japan_dict.txt"};
+                            "--cls=true"
+                            };
 
     int argc = sizeof(args) / sizeof(args[0]);  
     std::cout << "argc  value: " << argc << std::endl;
-    //char** argv = new char* [argc + 1];  // +1 for the null terminator
-
-    //for (int i = 0; i < argc; ++i) {
-    //    argv[i] = _strdup(args[i]);  // Use _strdup to duplicate strings
-    //    std::cout << "arg" << i << ":" << argv[i] << std::endl;
-    //}
-
-    //// Null-terminate the argv array
-    //argv[argc] = nullptr;
-
-    //// Free allocated memory
-    //for (int i = 0; i < argc; ++i) {
-    //    free(argv[i]);
-    //}
-    //delete[] argv;
     main_ocr(argc, const_cast<char**>(args));
 }
