@@ -7,7 +7,7 @@
 extern "C" __declspec(dllexport) void call_ocr(const char* input_file, const char* output_path);
 
 int main() {
-    HMODULE dllHandle = LoadLibrary(L"Ocr_dll_test2.dll"); //Replace with your .dll path
+    HMODULE dllHandle = LoadLibrary(L"OCR.dll"); //Replace with your .dll path
 
     if (dllHandle != nullptr) {
         typedef void(*call_ocr)(const char* input_file, const char* output_path);
