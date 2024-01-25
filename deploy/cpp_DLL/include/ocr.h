@@ -4,6 +4,7 @@
 #include "opencv2/imgproc.hpp"
 #include <iostream>
 #include <vector>
+#include "utility.h"
 
 #ifdef  OCR_DLL_TEST2_EXPORTS
 #define OCR_DLL_TEST2_API __declspec(dllexport)
@@ -12,8 +13,13 @@
 #endif
 
 void check_params();
-//void ocr(std::vector<cv::String>& );
+std::string get_extension(std::string );
+std::string extractImagesFromOfficeFile(std::string );
+std::string get_time();
+
 void structure(std::vector<cv::String>& );
-extern "C" OCR_DLL_TEST2_API int main_ocr(int, char**);
-extern "C" OCR_DLL_TEST2_API void ocr(std::vector<cv::String>&);
-extern "C" OCR_DLL_TEST2_API void call_ocr(const char* input_file, const char* output_path);
+void write_results(std::vector<PaddleOCR::OCRPredictResult>& );
+void main_ocr(int, char**);
+void ocr(std::vector<cv::String>&);
+extern "C" OCR_DLL_TEST2_API const char* extract_text(const char* input_file, const char* output_path);
+extern "C" OCR_DLL_TEST2_API void free_string(const char* cstr);
