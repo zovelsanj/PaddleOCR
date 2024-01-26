@@ -14,6 +14,7 @@
 #include "pch.h"
 #include <cstring>
 #include "ocr.h"
+#include "extractor.h"
 #include "opencv2/core.hpp"
 #include "opencv2/imgcodecs.hpp"
 #include "opencv2/imgproc.hpp"
@@ -21,6 +22,7 @@
 #include <vector>
 #include <fstream>
 #include <zip.h>
+
 #include <chrono>
 #include <ctime>
 #include <iomanip>
@@ -32,84 +34,123 @@
 
 using namespace PaddleOCR;
 
-std::string get_extension(std::string input_file) {
+namespace Extractor {
+  std::string get_extension(std::string input_file) {
     std::string basename = Utility::basename(input_file);
     std::size_t dotPos = basename.rfind('.');
     std::string extension;
-    if (dotPos != std::string::npos)
-    {
-        extension = basename.substr(dotPos);
+    if (dotPos != std::string::npos){
+      extension = basename.substr(dotPos);
     }
     return extension;
-}
+  }
 
-std::string get_time() {
+  std::string get_time() {
     auto now = std::chrono::system_clock::now();
     std::time_t now_time_t = std::chrono::system_clock::to_time_t(now);
     auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
 
     std::tm now_tm;
     localtime_s(&now_tm, &now_time_t);
-    std::stringstream ss;
+    std::stringstream ss{};
+
     ss << std::put_time(&now_tm, "%m%d%H%M%S");
-    std::cout << "timestamp: " << ss.str() << std::endl;
     ss << std::setfill('0') << std::setw(3) << now_ms.count();
     return ss.str();
-}
+  }
 
-std::string extractImagesFromOfficeFile(std::string filePath) {
+  std::string extractImagesFromOfficeFile(std::string filePath) {
     std::string image_dir = FLAGS_output + "\\images";
 
     if (!PaddleOCR::Utility::PathExists(FLAGS_output)) {
-        PaddleOCR::Utility::CreateDir(FLAGS_output);
+      PaddleOCR::Utility::CreateDir(FLAGS_output);
     }
     if (!PaddleOCR::Utility::PathExists(image_dir)) {
-        PaddleOCR::Utility::CreateDir(image_dir);
+      PaddleOCR::Utility::CreateDir(image_dir);
     }
 
     zip_t* file = zip_open(filePath.c_str(), ZIP_RDONLY, nullptr);
     if (!file) {
-        std::cerr << "Error opening file" << std::endl;
-        return "Error Reading File";
+      std::cerr << "Error opening file" << std::endl;
+      return "Error Reading File";
     }
 
     zip_int64_t numEntries = zip_get_num_entries(file, 0);
     for (zip_int64_t i = 0; i < numEntries; ++i) {
-        struct zip_stat stat;
-        zip_stat_init(&stat);
-        zip_stat_index(file, i, 0, &stat);
+      struct zip_stat stat;
+      zip_stat_init(&stat);
+      zip_stat_index(file, i, 0, &stat);
 
-        if (std::string(stat.name).find("media/") != std::string::npos) {
-            zip_file_t* imageFile = zip_fopen_index(file, i, 0);
+      if (std::string(stat.name).find("media/") != std::string::npos) {
+      zip_file_t* imageFile = zip_fopen_index(file, i, 0);
 
-            if (imageFile) {
-                zip_int64_t size = stat.size;
-                std::vector<char> buffer(size);
-                zip_fread(imageFile, buffer.data(), size);
-                zip_fclose(imageFile);
+      if (imageFile) {
+        zip_int64_t size = stat.size;
+        std::vector<char> buffer(size);
+        zip_fread(imageFile, buffer.data(), size);
+        zip_fclose(imageFile);
 
-                std::string out_file = image_dir + "/" + std::to_string(i) + ".png";
-                FILE* outputFile;
-                errno_t error = fopen_s(&outputFile, out_file.c_str(), "wb");
-                if (error != 0)
-                {
-                    std::cerr << "Error creating output file: " << out_file << " error code: " << errno << std::endl;   //error code rakhna baki
-                }
-                else {
-                    std::cout << "file path: " << out_file << std::endl;
-                    fwrite(buffer.data(), 1, buffer.size(), outputFile);
-                    fclose(outputFile);
-                    std::cout << "Image extracted: " << out_file << std::endl;
-                }
-            }
-            else {
-                std::cerr << "Error opening image file" << std::endl;
-            }
+        std::string out_file = image_dir + "/" + std::to_string(i) + ".png";
+        FILE* outputFile;
+        errno_t error = fopen_s(&outputFile, out_file.c_str(), "wb");
+        if (error != 0){
+          std::cerr << "Error creating output file: " << out_file << " error code: " << errno << std::endl;   //error code rakhna baki
         }
+        else {
+          std::cout << "file path: " << out_file << std::endl;
+          fwrite(buffer.data(), 1, buffer.size(), outputFile);
+          fclose(outputFile);
+          std::cout << "Image extracted: " << out_file << std::endl;
+        }
+      }
+      else {
+        std::cerr << "Error opening image file" << std::endl;
+      }
     }
-
+  }
     zip_close(file);
     return image_dir;
+}
+
+  void write_log(std::string output_file) {
+    std::string basename = Utility::basename(output_file);
+    FLAGS_logfile = FLAGS_output + "/" + "OCRlogs.txt";
+    std::fstream file(FLAGS_logfile, std::ios::app);
+
+    if (!file.is_open()) {
+      std::ofstream createFile(FLAGS_logfile);
+      createFile.close();
+
+      file.open(FLAGS_logfile, std::ios::app);
+    }
+    if (!Utility::PathExists(output_file)) {
+      file << "SUCCESS!! 2002" << std::ends;
+      file << std::endl;
+    }
+    else {
+      file << "ERROR!! 4005" << std::ends;
+      file << std::endl;
+    }
+    file.close();
+  }
+
+  void write_results(std::vector<OCRPredictResult>& ocr_results) {
+    if (!Utility::PathExists(FLAGS_output)) {
+      Utility::CreateDir(FLAGS_output);
+    }
+    std::fstream file(FLAGS_extracted_file, std::ios::app);
+
+    if (!file.is_open()) {
+      std::ofstream createFile(FLAGS_extracted_file);
+      createFile.close();
+      file.open(FLAGS_extracted_file, std::ios::app);
+    }
+    for (int i = 0; i < ocr_results.size(); i++) {
+      file << ocr_results[i].text << std::ends;
+    }
+    file << std::endl;
+    file.close();
+  }
 }
 
 void check_params() {
@@ -168,55 +209,13 @@ void check_params() {
               << std::endl;
     exit(1);
   }
-  std::string extension = get_extension(FLAGS_image_dir);
-  if (extension==".docx" || extension==".xlsx" || extension==".pptx")
-  {
-      std::string image_dir;
-      image_dir = extractImagesFromOfficeFile(FLAGS_image_dir);
-      std::cout << "image: " << image_dir << std::endl;
-      FLAGS_image_dir = image_dir;
+  std::string extension = Extractor::get_extension(FLAGS_image_dir);
+  if (extension==".docx" || extension==".xlsx" || extension==".pptx") {
+    std::string image_dir;
+    image_dir = Extractor::extractImagesFromOfficeFile(FLAGS_image_dir);
+    std::cout << "image: " << image_dir << std::endl;
+    FLAGS_image_dir = image_dir;
   }
-}
-
-void write_log(std::string output_file) {
-    std::string basename = Utility::basename(output_file);
-    FLAGS_logfile = FLAGS_output + "/" + "OCRlogs.txt";
-    std::fstream file(FLAGS_logfile, std::ios::app);
-    if (!file.is_open()) {
-        std::ofstream createFile(FLAGS_logfile);
-        createFile.close();
-
-        file.open(FLAGS_logfile, std::ios::app);
-    }
-    if (!Utility::PathExists(output_file)) {
-        file << "SUCCESS!! 2002" << std::ends;
-        file << std::endl;
-    }
-    else {
-        file << "ERROR!! 4005" << std::ends;
-        file << std::endl;
-    }
-    file.close();
-
-}
-
-void write_results(std::vector<OCRPredictResult>& ocr_results) {
-    if (!Utility::PathExists(FLAGS_output)) {
-        Utility::CreateDir(FLAGS_output);
-    }
-
-    std::fstream file(FLAGS_extracted_file, std::ios::app);
-    if (!file.is_open()) {
-        std::ofstream createFile(FLAGS_extracted_file);
-        createFile.close();
-
-        file.open(FLAGS_extracted_file, std::ios::app);
-    }
-    for (int i = 0; i < ocr_results.size(); i++) {
-        file << ocr_results[i].text << std::ends;
-    }
-    file << std::endl;
-    file.close();
 }
 
 void ocr(std::vector<cv::String> &cv_all_img_names, std::string inputfile) {
@@ -249,7 +248,7 @@ void ocr(std::vector<cv::String> &cv_all_img_names, std::string inputfile) {
   for (int i = 0; i < img_names.size(); ++i) {
     std::cout << "predict img: " << cv_all_img_names[i] << std::endl;
     Utility::print_result(ocr_results[i]);
-    write_results(ocr_results[i]);
+    Extractor::write_results(ocr_results[i]);
 
     if (FLAGS_visualize && FLAGS_det) {
       std::string file_name = Utility::basename(img_names[i]);
@@ -345,59 +344,58 @@ void main_ocr(int argc, char **argv) {
     std::cout << "only value in ['ocr','structure'] is supported" << std::endl;
   }
   
-  std::string extension = get_extension(inputfile);
-  if (extension == ".docx" || extension == ".xlsx" || extension == ".pptx")
-  {
-      if (Utility::PathExists(FLAGS_image_dir)) {
-          std::filesystem::path dir_to_delete = FLAGS_image_dir;
-          try {
-              Utility::DeleteDir(dir_to_delete);
-          }
-          catch (const std::filesystem::filesystem_error& e) {
-              std::cerr << "Error: " << e.what() << std::endl;
-          }
+  std::string extension = Extractor::get_extension(inputfile);
+  if (extension == ".docx" || extension == ".xlsx" || extension == ".pptx"){
+    if (Utility::PathExists(FLAGS_image_dir)) {
+      std::filesystem::path dir_to_delete = FLAGS_image_dir;
+      try {
+        Utility::DeleteDir(dir_to_delete);
       }
+      catch (const std::filesystem::filesystem_error& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+      }
+    }
   }
 }
 
 const char* extract_text(const char* input_file, const char* output_path)
 {
-    const char* in_initials = "--image_dir=";
-    size_t len_in_nitials = std::strlen(in_initials);
-    size_t lenInput = std::strlen(input_file);
-    size_t totalInputLen = len_in_nitials + lenInput;
+  const char* in_initials = "--image_dir=";
+  size_t len_in_nitials = std::strlen(in_initials);
+  size_t lenInput = std::strlen(input_file);
+  size_t totalInputLen = len_in_nitials + lenInput;
 
-    char* input_args = new char[totalInputLen + 1];
-    strcpy_s(input_args, totalInputLen + 1, in_initials);
-    strcat_s(input_args, totalInputLen + 1, input_file);
+  char* input_args = new char[totalInputLen + 1];
+  strcpy_s(input_args, totalInputLen + 1, in_initials);
+  strcat_s(input_args, totalInputLen + 1, input_file);
 
-    const char* out_initials = "--output=";
-    size_t len_out_initials = std::strlen(out_initials);
-    size_t lenOutput = std::strlen(output_path);
-    size_t totalOutputLen = len_out_initials + lenOutput;
+  const char* out_initials = "--output=";
+  size_t len_out_initials = std::strlen(out_initials);
+  size_t lenOutput = std::strlen(output_path);
+  size_t totalOutputLen = len_out_initials + lenOutput;
 
-    char* output_args = new char[totalOutputLen + 1];
-    strcpy_s(output_args, totalOutputLen + 1, out_initials);
-    strcat_s(output_args, totalOutputLen + 1, output_path);
+  char* output_args = new char[totalOutputLen + 1];
+  strcpy_s(output_args, totalOutputLen + 1, out_initials);
+  strcat_s(output_args, totalOutputLen + 1, output_path);
 
-    const char* args[] = {"system", input_args, output_args, "--use_angle_cls=true",  "--det=true", "--rec=true", "--cls=true"};
-    int argc = sizeof(args) / sizeof(args[0]);    
+  const char* args[] = {"system", input_args, output_args, "--use_angle_cls=true",  "--det=true", "--rec=true", "--cls=true"};
+  int argc = sizeof(args) / sizeof(args[0]);    
 
-    std::string message;
-    main_ocr(argc, const_cast<char**>(args));
-    if (Utility::PathExists(FLAGS_extracted_file)) {
-        message = FLAGS_extracted_file;
-    }
-    else {
-        message = "ERROR!! 4005";
-    }
+  std::string message;
+  main_ocr(argc, const_cast<char**>(args));
+  if (Utility::PathExists(FLAGS_extracted_file)) {
+    message = FLAGS_extracted_file;
+  }
+  else {
+    message = "ERROR!! 4005";
+  }
 
-    char* message_cstr = new char[message.size() + 1];
-    strcpy_s(message_cstr, message.size() + 1, message.c_str());
-    return message_cstr;
+  char* message_cstr = new char[message.size() + 1];
+  strcpy_s(message_cstr, message.size() + 1, message.c_str());
+  return message_cstr;
 }
 
 void free_string(const char* cstr)
 {
-    delete[] cstr;
+  delete[] cstr;
 }
